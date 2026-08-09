@@ -1,5 +1,9 @@
 #!/bin/sh
 set -e
+
+# Render/Fly set $PORT at runtime; default to 8000 if it's missing.
+PORT="${PORT:-8000}"
+
 mkdir -p /app/logs
 python manage.py migrate --noinput
 python manage.py collectstatic --noinput
