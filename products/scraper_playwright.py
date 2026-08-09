@@ -26,8 +26,8 @@ from playwright_stealth import Stealth
 logger = logging.getLogger(__name__)
 
 DEFAULT_MAX_PER_SITE = 3   # product pages per site, per search
-MIN_DELAY, MAX_DELAY = 0.6, 1.2  # seconds between page loads
-MAX_REVIEWS_PER_PRODUCT = 10
+MIN_DELAY, MAX_DELAY = 0.3, 0.7  # seconds between page loads
+MAX_REVIEWS_PER_PRODUCT = 6
 
 SITES = {
     "amazon": {

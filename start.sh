@@ -5,6 +5,16 @@ set -e
 PORT="${PORT:-8000}"
 
 mkdir -p /app/logs
+
+# First boot on a fresh (ephemeral) disk: seed from the bundled cache so
+# common search terms return instantly. Refresh timestamps so they count
+# as fresh for CACHE_HOURS.
+if [ ! -f /app/db.sqlite3 ] && [ -f /app/seed.sqlite3 ]; then
+  echo "Seeding database from bundled cache..."
+  cp /app/seed.sqlite3 /app/db.sqlite3
+  python -c "import os; os.environ.setdefault('DJANGO_SETTINGS_MODULE','safepro_backend.settings'); import django; django.setup(); from django.utils import timezone; from products.models import SearchQuery; SearchQuery.objects.update(last_scraped_at=timezone.now(), status='ready', error=''); print('Seeded %d cached searches' % SearchQuery.objects.count())"
+fi
+
 python manage.py migrate --noinput
 python manage.py collectstatic --noinput
 

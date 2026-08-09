@@ -207,7 +207,11 @@ function App() {
             if (!d.processing) {
               stopPolling();
               setProcessing(false);
-              setResults(cleanResults(d.results));
+              if (d.error) {
+                setError(d.error);
+              } else {
+                setResults(cleanResults(d.results));
+              }
             }
           } catch (err) {
             stopPolling();
