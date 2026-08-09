@@ -116,6 +116,12 @@ def _status_response(search_query):
 
 
 @api_view(["GET"])
+def health(request):
+    """Lightweight liveness check for hosting platforms (no scraping)."""
+    return Response({"ok": True, "status": "running"})
+
+
+@api_view(["GET"])
 def search(request):
     query_text = request.GET.get("q", "").strip().lower()
     if not query_text:
