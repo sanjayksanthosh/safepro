@@ -1,23 +1,89 @@
 import React, { useState, useRef, useEffect, useMemo } from "react";
-import { searchProducts, getProduct } from "./api.js";
+import { searchProducts } from "./api.js";
 
-const SITES = {
-  Amazon: { color: "#ff9900", short: "AZ" },
-  Flipkart: { color: "#2874f0", short: "FK" },
-  Myntra: { color: "#ff3f6c", short: "MN" },
+const SITE_COLORS = {
+  Amazon: "#ff9900",
+  Flipkart: "#2874f0",
+  Myntra: "#ff3f6c",
 };
 
 const SORT_OPTIONS = [
-  { id: "recommended", label: "Recommended (trust score)" },
-  { id: "price_asc", label: "Price: Low to High" },
-  { id: "price_desc", label: "Price: High to Low" },
-  { id: "rating", label: "Rating: High to Low" },
+  { id: "recommended", label: "Recommended · trust score" },
+  { id: "price_asc", label: "Price · low to high" },
+  { id: "price_desc", label: "Price · high to low" },
+  { id: "rating", label: "Listed rating · high to low" },
   { id: "reviews", label: "Most reviews" },
 ];
 
-function cleanText(s) {
-  if (!s) return "";
-  return String(s).replace(/\s+/g, " ").trim();
+const clean = (s) => String(s || "").replace(/\s+/g, " ").trim();
+const shortName = (n) => (n.length > 24 ? n.slice(0, 24) + "…" : n);
+const fmt = (n) => "₹" + Number(n).toLocaleString("en-IN");
+const refinedStars = (score) => (score ?? 0) / 20;
+const flaggedPct = (p) => Math.max(0, Math.round(100 - (p.genuine_review_pct ?? 0)));
+const noReviews = (p) => !p.reviews || p.reviews.length === 0;
+
+function verdict(p) {
+  if (noReviews(p)) return "unknown";
+  return (p.trust_score ?? 0) >= 60 ? "authentic" : "suspect";
+}
+
+function medianPrice(list) {
+  const prices = list.map((p) => p.price).filter((x) => x != null).sort((a, b) => a - b);
+  if (!prices.length) return null;
+  return prices[Math.floor(prices.length / 2)];
+}
+
+function sentimentSplit(reviews) {
+  if (!reviews || !reviews.length) return { positive: 0, neutral: 100, negative: 0 };
+  let pos = 0, neu = 0, neg = 0;
+  for (const r of reviews) {
+    const s = r.sentiment_score ?? 0.5;
+    if (s >= 0.6) pos++;
+    else if (s <= 0.4) neg++;
+    else neu++;
+  }
+  const n = reviews.length;
+  return {
+    positive: Math.round((pos / n) * 100),
+    neutral: Math.round((neu / n) * 100),
+    negative: Math.round((neg / n) * 100),
+  };
+}
+
+function buildSignals(p, all) {
+  const median = medianPrice(all);
+  const dev = median && p.price != null ? Math.abs(p.price - median) / median : 0;
+  const priceScore = Math.max(0, Math.round(100 - dev * 160));
+  const desc = clean(p.description);
+  const descScore = desc.length ? Math.min(100, Math.round(55 + desc.length / 25)) : 30;
+  return [
+    {
+      label: "Review authenticity",
+      score: noReviews(p) ? 0 : (p.genuine_review_pct ?? 0),
+      note: noReviews(p)
+        ? "No reviews scraped"
+        : `${flaggedPct(p)}% of ${p.reviews.length} reviews flagged as fake`,
+    },
+    {
+      label: "Average sentiment",
+      score: noReviews(p) ? 0 : Math.round((p.avg_sentiment ?? 0) * 100),
+      note: noReviews(p) ? "No reviews scraped" : "Sentiment across scraped reviews",
+    },
+    {
+      label: "Price consistency",
+      score: priceScore,
+      note: median
+        ? dev === 0
+          ? "Matches median price"
+          : `${Math.round(dev * 100)}% ${p.price > median ? "above" : "below"} median ${fmt(median)}`
+        : "Only one listing",
+    },
+    {
+      label: "Description integrity",
+      score: descScore,
+      note: desc.length ? "Listing description present" : "No description scraped",
+    },
+  ];
 }
 
 function sortProducts(list, sort) {
@@ -32,65 +98,110 @@ function sortProducts(list, sort) {
     case "reviews":
       return arr.sort((a, b) => (b.reviews?.length ?? 0) - (a.reviews?.length ?? 0));
     default:
-      return arr.sort(
-        (a, b) =>
-          (b.trust_score ?? 0) - (a.trust_score ?? 0) ||
-          (b.genuine_review_pct ?? 0) - (a.genuine_review_pct ?? 0)
-      );
+      return arr.sort((a, b) => (b.trust_score ?? 0) - (a.trust_score ?? 0));
   }
 }
 
-function ringColor(score, noData) {
-  if (noData) return "#9ca3af";
-  if (score >= 75) return "#16a34a";
-  if (score >= 50) return "#d97706";
-  return "#dc2626";
+/* ---------- Icons ---------- */
+
+function Icon({ id, className }) {
+  return <svg className={`ico ${className || ""}`}><use href={`#${id}`} /></svg>;
 }
 
-function TrustRing({ score, noData, size = 76 }) {
-  const r = size / 2 - 7;
-  const c = 2 * Math.PI * r;
-  const pct = noData ? 0 : Math.max(0, Math.min(100, score));
-  const color = ringColor(score, noData);
+function Icons() {
   return (
-    <svg
-      viewBox={`0 0 ${size} ${size}`}
-      className="trust-ring"
-      style={{ width: size, height: size }}
-    >
-      <circle cx={size / 2} cy={size / 2} r={r} className="ring-bg" strokeWidth={7} />
-      <circle
-        cx={size / 2}
-        cy={size / 2}
-        r={r}
-        className="ring-fg"
-        stroke={color}
-        strokeDasharray={`${(pct / 100) * c} ${c}`}
-        strokeWidth={7}
-        transform={`rotate(-90 ${size / 2} ${size / 2})`}
-      />
-      <text x="50%" y="55%" textAnchor="middle" dominantBaseline="middle" className="ring-text">
-        {noData ? "—" : Math.round(pct)}
-      </text>
+    <svg style={{ display: "none" }}>
+      <symbol id="i-shield" viewBox="0 0 24 24"><path d="M20 13c0 5-3.5 7.5-8 9-4.5-1.5-8-4-8-9V6l8-3 8 3z"/><path d="m9 12 2 2 4-4"/></symbol>
+      <symbol id="i-alert" viewBox="0 0 24 24"><path d="M20 13c0 5-3.5 7.5-8 9-4.5-1.5-8-4-8-9V6l8-3 8 3z"/><path d="M12 8v4"/><path d="M12 16h.01"/></symbol>
+      <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></symbol>
+      <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M7 17 17 7"/><path d="M8 7h9v9"/></symbol>
+      <symbol id="i-trend" viewBox="0 0 24 24"><path d="m3 7 6 6 4-4 8 8"/><path d="M21 17v-5h-5"/></symbol>
+      <symbol id="i-flag" viewBox="0 0 24 24"><path d="M4 15V4h12l-2 4 2 4H4"/><path d="M4 21v-6"/></symbol>
+      <symbol id="i-check" viewBox="0 0 24 24"><path d="m4 12 5 5L20 6"/></symbol>
+      <symbol id="i-spark" viewBox="0 0 24 24"><path d="M12 3v6M12 15v6M3 12h6M15 12h6"/><path d="m6 6 3 3M15 15l3 3M18 6l-3 3M9 15l-3 3"/></symbol>
     </svg>
   );
 }
 
-function SiteBadge({ site }) {
-  const info = SITES[site] || { color: "#6b7280", short: "?" };
+/* ---------- Bits ---------- */
+
+function SiteTag({ site }) {
   return (
-    <span
-      className="site-badge"
-      style={{ backgroundColor: info.color }}
-      title={`Sold on ${site}`}
-    >
-      <span className="site-dot" style={{ backgroundColor: "#ffffff" }} />
-      {site}
+    <span className="plat-tag" style={{ "--sc": SITE_COLORS[site] || "#8b8578" }}>
+      <i />{site}
     </span>
   );
 }
 
-function SearchBar({ onSearch, loading }) {
+function VerdictPill({ v }) {
+  if (v === "authentic")
+    return <span className="pill ok"><Icon id="i-shield" /><span>Likely authentic</span></span>;
+  if (v === "suspect")
+    return <span className="pill bad"><Icon id="i-alert" /><span>Counterfeit risk</span></span>;
+  return <span className="pill"><Icon id="i-search" /><span>Insufficient data</span></span>;
+}
+
+function TrustRing({ score, v }) {
+  const r = 52, c = 2 * Math.PI * r;
+  const pct = Math.max(0, Math.min(100, score ?? 0));
+  const stroke =
+    v === "authentic" ? "var(--authentic)" : v === "suspect" ? "var(--suspect)" : "#c8c0b4";
+  return (
+    <div className="ring">
+      <svg viewBox="0 0 120 120">
+        <circle cx="60" cy="60" r={r} fill="none" stroke="var(--sand)" strokeWidth="10" />
+        <circle
+          cx="60" cy="60" r={r} fill="none" stroke={stroke} strokeWidth="10"
+          strokeLinecap="round" strokeDasharray={`${(pct / 100) * c} ${c}`}
+        />
+      </svg>
+      <div className="val">
+        <b>{v === "unknown" ? "—" : Math.round(pct)}</b>
+        <span className="eyebrow">trust</span>
+      </div>
+    </div>
+  );
+}
+
+function Signal({ s }) {
+  return (
+    <div className="signal">
+      <div className="row">
+        <span>{s.label}</span>
+        <span>{s.score}</span>
+      </div>
+      <div className="bar">
+        <i style={{ width: `${s.score}%`, background: s.score >= 60 ? "var(--authentic)" : "var(--suspect)" }} />
+      </div>
+      <p>{s.note}</p>
+    </div>
+  );
+}
+
+/* ---------- Header ---------- */
+
+function SiteHeader() {
+  return (
+    <header>
+      <div className="wrap navrow">
+        <div className="brand">
+          <span className="mark"><Icon id="i-shield" /></span>
+          <span>Safe-pro</span>
+        </div>
+        <nav>
+          <a href="#analysis">Analysis</a>
+          <a href="#compare">Compare</a>
+          <a href="#pipeline">How it works</a>
+        </nav>
+        <a className="btn" href="#search">Scan a product</a>
+      </div>
+    </header>
+  );
+}
+
+/* ---------- Hero ---------- */
+
+function Hero({ onSearch, loading }) {
   const [term, setTerm] = useState("");
   const [error, setError] = useState("");
   const submit = (e) => {
@@ -104,259 +215,293 @@ function SearchBar({ onSearch, loading }) {
     onSearch(q);
   };
   return (
-    <form className="search-bar" onSubmit={submit}>
-      <div className="search-field">
-        <svg className="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-          <circle cx="11" cy="11" r="8" />
-          <path d="m21 21-4.3-4.3" />
-        </svg>
+    <section className="wrap hero" id="search">
+      <span className="eyebrow">Product authentication · beauty</span>
+      <h1>Know what&rsquo;s real <em>before</em> you buy it.</h1>
+      <p className="lede">
+        Safe-pro scrapes listings, prices and reviews across Amazon, Flipkart and
+        Myntra, filters out fake reviews, and shows you a refined score you can
+        actually trust.
+      </p>
+      <form className="searchbar" onSubmit={submit}>
+        <Icon id="i-search" />
         <input
-          type="text"
           value={term}
           onChange={(e) => setTerm(e.target.value)}
-          placeholder="Try sunscreen, face serum, lipstick, face wash…"
+          placeholder="Search a beauty product — sunscreen, serum, lipstick…"
+          aria-label="Search a beauty product"
           disabled={loading}
         />
-      </div>
-      <button type="submit" className="btn-primary" disabled={loading}>
-        {loading ? (
-          <>
-            <span className="spinner-sm" /> Searching…
-          </>
-        ) : (
-          "Search"
-        )}
-      </button>
+        <button className="btn" disabled={loading}>
+          {loading ? "Scanning…" : "Verify"}
+        </button>
+      </form>
       {error && <p className="error">{error}</p>}
-    </form>
+      <dl className="stats">
+        <div><dt>3</dt><dd>Marketplaces scraped</dd></div>
+        <div><dt>AI</dt><dd>Fake-review detection</dd></div>
+        <div><dt>24h</dt><dd>Results cached</dd></div>
+      </dl>
+    </section>
   );
 }
+
+/* ---------- Processing ---------- */
 
 function ProcessingView({ term, progress }) {
   return (
-    <div className="processing card">
-      <div className="spinner" />
-      <h3>Searching <span className="accent">{term}</span></h3>
-      <p className="muted">
-        We&apos;re live-scraping Amazon, Flipkart and Myntra and running our
-        fake-review detection. This usually takes a few minutes.
-      </p>
-      {progress && <p className="progress-msg">{progress}</p>}
-      <div className="progress-track">
-        <div className="progress-bar" />
+    <section className="wrap">
+      <div className="card pad processing-card">
+        <div className="spinner" />
+        <h2>Scanning &ldquo;{term}&rdquo;</h2>
+        <p className="muted" style={{ maxWidth: "32rem", margin: "0 auto" }}>
+          Live-scraping Amazon, Flipkart and Myntra, then running review-authenticity
+          analysis. This usually takes a few minutes.
+        </p>
+        {progress && <p className="progress-msg mono">{progress}</p>}
+        <div className="progress-track"><div className="progress-bar" /></div>
       </div>
-    </div>
+    </section>
   );
 }
 
-function ProductCard({ product, onSelect, isBest, rank }) {
-  const noReviews = !product.reviews || product.reviews.length === 0;
-  const info = SITES[product.source_site] || { color: "#6b7280", short: "?" };
-  const desc = cleanText(product.description);
+/* ---------- Analysis ---------- */
+
+function AnalysisPanel({ product, all }) {
+  const v = verdict(product);
+  const sents = sentimentSplit(product.reviews);
+  const signals = buildSignals(product, all);
+  const desc = clean(product.description);
   return (
-    <button
-      className={`product-card ${isBest ? "best" : ""}`}
-      onClick={() => onSelect(product.id)}
-    >
-      {isBest && (
-        <span className="best-ribbon">
-          <svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor">
-            <path d="M12 2l2.4 4.9 5.4.8-3.9 3.8.9 5.4L12 14.6l-4.8 2.5.9-5.4-3.9-3.8 5.4-.8z" />
-          </svg>
-          Best pick
-        </span>
-      )}
-      <div className="card-media" style={{ background: `linear-gradient(135deg, ${info.color}33, ${info.color}18)` }}>
-        {product.image_url ? (
-          <img src={product.image_url} alt={product.name} loading="lazy" />
-        ) : (
-          <span className="media-mono">{info.short}</span>
-        )}
-        {rank !== null && <span className="rank">{rank}</span>}
-      </div>
-      <div className="card-body">
-        <div className="card-top">
-          <SiteBadge site={product.source_site} />
-          <span className="trust-chip" style={{ color: ringColor(product.trust_score, noReviews) }}>
-            Trust {noReviews ? "—" : Math.round(product.trust_score)}%
-          </span>
-        </div>
-        <h3 className="card-title">{product.name}</h3>
-        {desc && <p className="card-desc">{desc.slice(0, 110)}{desc.length > 110 ? "…" : ""}</p>}
-        <div className="card-meta">
-          {product.price != null && <span className="price">₹{Number(product.price).toLocaleString("en-IN")}</span>}
-          {product.rating != null && (
-            <span className="rating-chip">★ {product.rating}</span>
-          )}
-          {!noReviews && (
-            <span className="muted">{product.reviews.length} reviews</span>
-          )}
-        </div>
-      </div>
-      <div className="card-score">
-        <TrustRing score={product.trust_score} noData={noReviews} />
-        <span className="score-label">trust score</span>
-      </div>
-    </button>
-  );
-}
-
-function ResultsToolbar({ count, term, sort, onSort }) {
-  return (
-    <div className="toolbar">
-      <p className="results-title">
-        <strong>{count}</strong> {count === 1 ? "product" : "products"} compared
-        {term ? ` for “${term}”` : ""}
-      </p>
-      <label className="sort-control">
-        <span>Sort by</span>
-        <select value={sort} onChange={(e) => onSort(e.target.value)}>
-          {SORT_OPTIONS.map((o) => (
-            <option key={o.id} value={o.id}>
-              {o.label}
-            </option>
-          ))}
-        </select>
-      </label>
-    </div>
-  );
-}
-
-function StatPill({ label, value, color }) {
-  return (
-    <div className="stat-pill">
-      <span className="stat-value" style={{ color }}>
-        {value}
-      </span>
-      <span className="stat-label">{label}</span>
-    </div>
-  );
-}
-
-function ProductDetail({ product, onBack }) {
-  const noReviews = !product.reviews || product.reviews.length === 0;
-  const info = SITES[product.source_site] || { color: "#6b7280", short: "?" };
-  const desc = cleanText(product.description);
-  const genuineCount = product.reviews?.filter((r) => r.fake_probability < 0.5).length ?? 0;
-
-  return (
-    <div className="detail card">
-      <button className="back" onClick={onBack}>
-        ← Back to results
-      </button>
-
-      <div className="detail-head">
-        <div
-          className="detail-media"
-          style={{ background: `linear-gradient(135deg, ${info.color}33, ${info.color}18)` }}
-        >
-          {product.image_url ? (
-            <img src={product.image_url} alt={product.name} />
-          ) : (
-            <span className="media-mono">{info.short}</span>
-          )}
-        </div>
-        <div className="detail-main">
-          <SiteBadge site={product.source_site} />
-          <h2>{product.name}</h2>
-          <div className="detail-meta">
-            {product.price != null && (
-              <span className="price big">₹{Number(product.price).toLocaleString("en-IN")}</span>
-            )}
-            {product.rating != null && <span className="rating-chip big">★ {product.rating}</span>}
+    <div className="analysis">
+      <div className="card pad">
+        <div className="prodhead">
+          <div>
+            <p className="eyebrow"><SiteTag site={product.source_site} /></p>
+            <h3>{product.name}</h3>
+            <p className="muted" style={{ fontSize: ".875rem", marginTop: ".25rem" }}>
+              {product.reviews?.length ?? 0} reviews analysed
+            </p>
+            <div style={{ marginTop: "1rem" }}><VerdictPill v={v} /></div>
           </div>
-          <a href={product.url} target="_blank" rel="noreferrer" className="btn-outline">
-            View on {product.source_site} ↗
-          </a>
+          <TrustRing score={product.trust_score} v={v} />
         </div>
-        <div className="detail-score">
-          <TrustRing score={product.trust_score} noData={noReviews} size={96} />
-          <span className="score-label">overall trust</span>
-        </div>
+        {desc && <p className="summary">{desc}</p>}
+        {signals.map((s, i) => <Signal key={i} s={s} />)}
       </div>
 
-      <div className="stats-row">
-        <StatPill
-          label="Trust score"
-          value={noReviews ? "—" : `${Math.round(product.trust_score)}%`}
-          color={ringColor(product.trust_score, noReviews)}
-        />
-        <StatPill
-          label="Avg sentiment"
-          value={noReviews ? "—" : `${Math.round((product.avg_sentiment ?? 0) * 100)}%`}
-          color="#2563eb"
-        />
-        <StatPill
-          label="Genuine reviews"
-          value={noReviews ? "—" : `${product.genuine_review_pct ?? 0}%`}
-          color="#16a34a"
-        />
-        <StatPill
-          label="Reviews checked"
-          value={product.reviews?.length ?? 0}
-          color="#6b7280"
-        />
-      </div>
-
-      {desc && (
-        <section className="detail-section">
-          <h3>About this product</h3>
-          <p className="description">{desc}</p>
-        </section>
-      )}
-
-      <section className="detail-section">
-        <h3>
-          Review analysis
-          {!noReviews && (
-            <span className="review-summary">
-              {genuineCount} genuine · {product.reviews.length - genuineCount} flagged as fake
-            </span>
-          )}
-        </h3>
-        {noReviews ? (
-          <p className="empty">
-            No review data was scraped for this product (the site may have blocked
-            the review section).
-          </p>
-        ) : (
-          <ul className="review-list">
-            {product.reviews.map((r, i) => {
+      <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
+        <div className="card pad">
+          <span className="eyebrow">Review sentiment</span>
+          <div className="senti">
+            <div style={{ width: `${sents.positive}%`, background: "var(--authentic)" }} />
+            <div style={{ width: `${sents.neutral}%`, background: "var(--sand)" }} />
+            <div style={{ width: `${sents.negative}%`, background: "var(--suspect)" }} />
+          </div>
+          <div className="senti-legend">
+            <span>{sents.positive}% positive</span>
+            <span>{sents.neutral}% neutral</span>
+            <span>{sents.negative}% negative</span>
+          </div>
+          {noReviews(product) ? (
+            <p className="muted" style={{ marginTop: "1rem", fontSize: ".875rem" }}>
+              No review data was scraped for this product — the site may have blocked
+              the review section.
+            </p>
+          ) : (
+            product.reviews.map((r, i) => {
               const fake = r.fake_probability >= 0.5;
               return (
-                <li key={i} className={`review ${fake ? "fake" : ""}`}>
-                  <p className="review-text">{r.text}</p>
-                  <p className="review-meta">
-                    {r.author && <span className="review-author">{r.author}</span>}
-                    {r.star_rating != null && <span>★ {r.star_rating}</span>}
-                    <span
-                      className={`verdict ${fake ? "fake" : "genuine"}`}
-                    >
+                <div key={i} className={`review ${fake ? "flag" : ""}`}>
+                  <div className="top">
+                    <span>{r.author || "Anonymous"}</span>
+                    <b className={fake ? "bad-t" : "ok-t"}>
+                      <Icon id={fake ? "i-flag" : "i-check"} />
                       {fake
-                        ? `⚠ ${Math.round(r.fake_probability * 100)}% likely fake`
-                        : `✓ ${Math.round((1 - r.fake_probability) * 100)}% genuine`}
-                    </span>
-                    <span>Sentiment {Math.round(r.sentiment_score * 100)}%</span>
+                        ? `${Math.round(r.fake_probability * 100)}% likely fake`
+                        : `${Math.round((1 - r.fake_probability) * 100)}% genuine`}
+                    </b>
+                  </div>
+                  <q>{r.text}</q>
+                  <p>
+                    Sentiment {Math.round((r.sentiment_score ?? 0.5) * 100)}%
+                    {r.star_rating != null ? ` · ★ ${r.star_rating}` : ""}
                   </p>
-                </li>
+                </div>
               );
-            })}
-          </ul>
-        )}
-      </section>
+            })
+          )}
+        </div>
+      </div>
     </div>
   );
 }
+
+function AnalysisSection({ products, selected, onSelect }) {
+  return (
+    <section className="band warm" id="analysis">
+      <div className="wrap">
+        <div className="sechead">
+          <div>
+            <span className="eyebrow">Live analysis</span>
+            <h2>One verdict, three marketplaces.</h2>
+          </div>
+          <div className="tabs" role="tablist">
+            {products.map((p) => (
+              <button
+                key={p.id}
+                role="tab"
+                aria-selected={selected.id === p.id}
+                className="tab"
+                onClick={() => onSelect(p.id)}
+              >
+                {shortName(p.name)}
+              </button>
+            ))}
+          </div>
+        </div>
+        <AnalysisPanel product={selected} all={products} />
+      </div>
+    </section>
+  );
+}
+
+/* ---------- Compare ---------- */
+
+function CompareSection({ products, sort, onSort }) {
+  const sorted = sortProducts(products, sort);
+  const best = [...products].sort((a, b) => (b.trust_score ?? 0) - (a.trust_score ?? 0))[0];
+  const cheapest = [...products].filter((p) => p.price != null).sort((a, b) => a.price - b.price)[0];
+  return (
+    <section className="wrap plain" id="compare">
+      <div className="sechead">
+        <div>
+          <span className="eyebrow">Refined ratings</span>
+          <h2 style={{ maxWidth: "42rem" }}>
+            The star rating you see isn&rsquo;t the rating you should trust.
+          </h2>
+        </div>
+        <label className="sort-control">
+          <span className="eyebrow">Sort by</span>
+          <select value={sort} onChange={(e) => onSort(e.target.value)}>
+            {SORT_OPTIONS.map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}
+          </select>
+        </label>
+      </div>
+      <div className="tablewrap">
+        <table>
+          <thead>
+            <tr>
+              <th className="eyebrow">Product</th>
+              <th className="eyebrow">Listed rating</th>
+              <th className="eyebrow">Refined rating</th>
+              <th className="eyebrow">Flagged reviews</th>
+              <th className="eyebrow">Price</th>
+              <th className="eyebrow">Verdict</th>
+            </tr>
+          </thead>
+          <tbody>
+            {sorted.map((p) => {
+              const v = verdict(p);
+              const isBest = best && best.id === p.id;
+              return (
+                <tr key={p.id} className={isBest ? "row-best" : ""}>
+                  <td>
+                    <strong>{p.name}</strong>
+                    <small><SiteTag site={p.source_site} /></small>
+                  </td>
+                  <td className="mono muted strike">
+                    {p.rating != null ? p.rating.toFixed(1) : "—"}
+                  </td>
+                  <td className="mono" style={{ fontWeight: 500 }}>
+                    {noReviews(p) ? "—" : refinedStars(p.trust_score).toFixed(1)}
+                  </td>
+                  <td className="mono">{noReviews(p) ? "—" : `${flaggedPct(p)}%`}</td>
+                  <td className="mono">{p.price != null ? fmt(p.price) : "—"}</td>
+                  <td><VerdictPill v={v} /></td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+      <div className="listfoot warm">
+        <span>
+          Cheapest listing{" "}
+          {cheapest
+            ? `${fmt(cheapest.price)} on ${cheapest.source_site}${verdict(cheapest) === "suspect" ? " — flagged" : ""}`
+            : "—"}
+        </span>
+        <span>
+          Best overall trust:{" "}
+          <b>{best ? `${best.source_site} · ${Math.round(best.trust_score)}/100` : ""}</b>
+        </span>
+      </div>
+    </section>
+  );
+}
+
+/* ---------- Pipeline / CTA / Footer ---------- */
+
+function Pipeline() {
+  return (
+    <section className="plain" id="pipeline" style={{ borderTop: "1px solid var(--border)", background: "var(--card)" }}>
+      <div className="wrap">
+        <span className="eyebrow">The pipeline</span>
+        <h2 style={{ maxWidth: "34rem" }}>From raw listing to a decision you can act on.</h2>
+        <div className="steps">
+          <div className="step"><span>01</span><h3>Collect</h3><p>Listings, prices and reviews scraped across Amazon, Flipkart and Myntra.</p></div>
+          <div className="step"><span>02</span><h3>Clean</h3><p>Noise, emoji and boilerplate stripped from review text.</p></div>
+          <div className="step"><span>03</span><h3>Analyse</h3><p>NLP reads sentiment, claims and suspicious phrasing.</p></div>
+          <div className="step"><span>04</span><h3>Classify</h3><p>An ML model scores each review and listing for authenticity.</p></div>
+        </div>
+        <div className="feats">
+          <div className="card lift feat"><Icon id="i-spark" className="feat-ico" /><h3>Sentiment that counts</h3><p>Only reviews that survive the fake filter feed the score.</p></div>
+          <div className="card lift feat"><Icon id="i-trend" className="feat-ico" /><h3>Price anomaly watch</h3><p>Listings priced far below the median get flagged, not celebrated.</p></div>
+          <div className="card lift feat"><Icon id="i-shield" className="feat-ico" /><h3>One trustworthy tab</h3><p>No hopping between marketplaces to compare what&rsquo;s real.</p></div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function CTA() {
+  return (
+    <section className="wrap plain">
+      <div className="card warm cta">
+        <h2 style={{ maxWidth: "36rem" }}>Shop on transparency, not manipulation.</h2>
+        <p className="muted" style={{ maxWidth: "34rem", fontSize: ".875rem" }}>
+          Safe-Pro turns scattered listings, noisy reviews and shifting prices into
+          one honest verdict — before the product reaches your skin.
+        </p>
+        <a className="btn" href="#search" style={{ padding: ".75rem 1.5rem" }}>Try a scan</a>
+      </div>
+    </section>
+  );
+}
+
+function Footer() {
+  return (
+    <footer>
+      <div className="wrap footrow">
+        <span>Safe-Pro — intelligent product comparison &amp; review authentication</span>
+        <span className="mono">Live scrapes from Amazon, Flipkart &amp; Myntra</span>
+      </div>
+    </footer>
+  );
+}
+
+/* ---------- App ---------- */
 
 function App() {
   const [term, setTerm] = useState("");
   const [results, setResults] = useState(null);
-  const [selected, setSelected] = useState(null);
   const [loading, setLoading] = useState(false);
   const [processing, setProcessing] = useState(false);
   const [progress, setProgress] = useState("");
   const [error, setError] = useState("");
   const [sort, setSort] = useState("recommended");
+  const [selectedId, setSelectedId] = useState(null);
   const pollRef = useRef(null);
 
   const stopPolling = () => {
@@ -370,7 +515,6 @@ function App() {
 
   const handleSearch = async (q) => {
     setError("");
-    setSelected(null);
     setProcessing(false);
     setProgress("");
     stopPolling();
@@ -393,7 +537,9 @@ function App() {
               if (d.error) {
                 setError(d.error);
               } else {
-                setResults(cleanResults(d.results));
+                const list = cleanResults(d.results);
+                setResults(list);
+                if (list.length) setSelectedId(list[0].id);
               }
             }
           } catch (err) {
@@ -405,7 +551,9 @@ function App() {
       } else if (data.error) {
         setError(data.error);
       } else {
-        setResults(cleanResults(data.results));
+        const list = cleanResults(data.results);
+        setResults(list);
+        if (list.length) setSelectedId(list[0].id);
       }
     } catch (err) {
       setError(err.message);
@@ -414,109 +562,40 @@ function App() {
     }
   };
 
-  const openProduct = async (id) => {
-    try {
-      setSelected(await getProduct(id));
-    } catch (err) {
-      setError(err.message);
-    }
-  };
+  const cleanResults = (list) => (list || []).filter((p) => p.name && String(p.name).trim());
 
-  const cleanResults = (list) =>
-    (list || []).filter((p) => p.name && String(p.name).trim());
-
-  const sorted = useMemo(() => sortProducts(results || [], sort), [results, sort]);
-  const best = useMemo(
-    () =>
-      results && results.length
-        ? [...results].sort(
-            (a, b) =>
-              (b.trust_score ?? 0) - (a.trust_score ?? 0) ||
-              (b.genuine_review_pct ?? 0) - (a.genuine_review_pct ?? 0)
-          )[0]
-        : null,
-    [results]
+  const selected = useMemo(
+    () => results?.find((p) => p.id === selectedId) || results?.[0] || null,
+    [results, selectedId]
   );
 
   return (
     <div className="app">
-      <header className="site-header">
-        <div className="header-inner">
-          <div className="logo">
-            <span className="logo-mark">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M12 2 4 7v5c0 5.2 3.4 9.6 8 10.9 4.6-1.3 8-5.7 8-10.9V7z" />
-              </svg>
-            </span>
-            <div>
-              <h1>Safe-Pro</h1>
-              <p className="tagline">Compare beauty products · detect fake reviews</p>
-            </div>
-          </div>
-          <div className="trust-strip">
-            <span>✓ 3 stores</span>
-            <span>✓ AI review analysis</span>
-            <span>✓ Unbiased scores</span>
-          </div>
-        </div>
-      </header>
-
+      <Icons />
+      <SiteHeader />
       <main>
-        <div className="hero">
-          <h2>Shop smart, not gullible</h2>
-          <p className="hero-sub">
-            Search a product and we compare it across Amazon, Flipkart and Myntra —
-            then score every review for authenticity so you can trust what you buy.
-          </p>
-          <SearchBar onSearch={handleSearch} loading={loading || processing} />
-        </div>
+        <Hero onSearch={handleSearch} loading={loading || processing} />
 
-        {error && <p className="error banner">{error}</p>}
-
+        {error && <p className="error banner wrap">{error}</p>}
         {processing && <ProcessingView term={term} progress={progress} />}
 
-        {!processing && results && !selected && (
-          <section className="results">
-            <ResultsToolbar
-              count={results.length}
-              term={term}
-              sort={sort}
-              onSort={setSort}
-            />
-            {results.length === 0 ? (
-              <p className="empty card">
-                No products found for “{term}”. Try a different search term.
-              </p>
-            ) : (
-              <div className="product-list">
-                {sorted.map((p, i) => (
-                  <ProductCard
-                    key={p.id}
-                    product={p}
-                    onSelect={openProduct}
-                    isBest={best && best.id === p.id}
-                    rank={i + 1}
-                  />
-                ))}
-              </div>
-            )}
-          </section>
+        {!processing && results && results.length > 0 && selected && (
+          <>
+            <AnalysisSection products={results} selected={selected} onSelect={setSelectedId} />
+            <CompareSection products={results} sort={sort} onSort={setSort} />
+          </>
         )}
 
-        {selected && (
-          <ProductDetail
-            product={selected}
-            onBack={() => setSelected(null)}
-          />
+        {!processing && results && results.length === 0 && (
+          <p className="empty wrap card pad">
+            No products found for &ldquo;{term}&rdquo;. Try a different search term.
+          </p>
         )}
+
+        <Pipeline />
+        <CTA />
       </main>
-
-      <footer className="site-footer">
-        <p>
-          Safe-Pro is an independent comparison tool. Prices and availability are
-          scraped from public store pages and may change.
-        </p>
-      </footer>
+      <Footer />
     </div>
   );
 }
