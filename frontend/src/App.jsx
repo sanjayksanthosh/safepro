@@ -163,6 +163,17 @@ function TrustRing({ score, v }) {
   );
 }
 
+function Stars({ value }) {
+  const full = Math.round(value);
+  return (
+    <span className="stars" aria-label={`${value.toFixed(1)} out of 5`}>
+      {[1, 2, 3, 4, 5].map((i) => (
+        <span key={i} className={i <= full ? "on" : ""}>★</span>
+      ))}
+    </span>
+  );
+}
+
 function Signal({ s }) {
   return (
     <div className="signal">
@@ -201,7 +212,7 @@ function SiteHeader() {
 
 /* ---------- Hero ---------- */
 
-function Hero({ onSearch, loading }) {
+function Hero({ onSearch, loading, best }) {
   const [term, setTerm] = useState("");
   const [error, setError] = useState("");
   const submit = (e) => {
@@ -216,32 +227,61 @@ function Hero({ onSearch, loading }) {
   };
   return (
     <section className="wrap hero" id="search">
-      <span className="eyebrow">Product authentication · beauty</span>
-      <h1>Know what&rsquo;s real <em>before</em> you buy it.</h1>
-      <p className="lede">
-        Safe-pro scrapes listings, prices and reviews across Amazon, Flipkart and
-        Myntra, filters out fake reviews, and shows you a refined score you can
-        actually trust.
-      </p>
-      <form className="searchbar" onSubmit={submit}>
-        <Icon id="i-search" />
-        <input
-          value={term}
-          onChange={(e) => setTerm(e.target.value)}
-          placeholder="Search a beauty product — sunscreen, serum, lipstick…"
-          aria-label="Search a beauty product"
-          disabled={loading}
-        />
-        <button className="btn" disabled={loading}>
-          {loading ? "Scanning…" : "Verify"}
-        </button>
-      </form>
-      {error && <p className="error">{error}</p>}
-      <dl className="stats">
-        <div><dt>3</dt><dd>Marketplaces scraped</dd></div>
-        <div><dt>AI</dt><dd>Fake-review detection</dd></div>
-        <div><dt>24h</dt><dd>Results cached</dd></div>
-      </dl>
+      <div className="hero-grid">
+        <div className="hero-copy">
+          <span className="eyebrow">Product authentication · beauty</span>
+          <h1>Know what&rsquo;s real <em>before</em> you buy it.</h1>
+          <p className="lede">
+            Safe-pro scrapes listings, prices and reviews across Amazon, Flipkart and
+            Myntra, filters out fake reviews, and shows you a refined score you can
+            actually trust.
+          </p>
+          <form className="searchbar" onSubmit={submit}>
+            <Icon id="i-search" />
+            <input
+              value={term}
+              onChange={(e) => setTerm(e.target.value)}
+              placeholder="Search a beauty product — sunscreen, serum, lipstick…"
+              aria-label="Search a beauty product"
+              disabled={loading}
+            />
+            <button className="btn" disabled={loading}>
+              {loading ? "Scanning…" : "Verify"}
+            </button>
+          </form>
+          {error && <p className="error">{error}</p>}
+          <dl className="stats">
+            <div><dt>3</dt><dd>Marketplaces scraped</dd></div>
+            <div><dt>AI</dt><dd>Fake-review detection</dd></div>
+            <div><dt>24h</dt><dd>Results cached</dd></div>
+          </dl>
+        </div>
+
+        <div className="hero-art">
+          <div className="hero-frame">
+            <img src="/hero.jpg" alt="Beauty product editorial" loading="eager" />
+            <div className="card float-a">
+              <span className="pill ok"><Icon id="i-shield" />Likely authentic</span>
+              <p className="float-score">
+                {best ? `${Math.round(best.trust_score)} / 100` : "— / 100"}
+              </p>
+              <p className="muted float-note">
+                {best
+                  ? `${flaggedPct(best)}% of ${best.reviews?.length ?? 0} reviews flagged as fake`
+                  : "Search a product to see its verdict"}
+              </p>
+            </div>
+            <div className="card float-b">
+              <Icon id="i-trend" />
+              <span>
+                {best && best.price != null
+                  ? `Best price ${fmt(best.price)} · ${best.source_site}`
+                  : "3 marketplaces · AI analysis"}
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
     </section>
   );
 }
@@ -279,12 +319,35 @@ function AnalysisPanel({ product, all }) {
           <div>
             <p className="eyebrow"><SiteTag site={product.source_site} /></p>
             <h3>{product.name}</h3>
-            <p className="muted" style={{ fontSize: ".875rem", marginTop: ".25rem" }}>
-              {product.reviews?.length ?? 0} reviews analysed
-            </p>
-            <div style={{ marginTop: "1rem" }}><VerdictPill v={v} /></div>
+            <div className="prod-meta">
+              {product.price != null && <span className="price">{fmt(product.price)}</span>}
+              {product.rating != null && (
+                <span className="rating-chip"><span>★</span>{product.rating.toFixed(1)}</span>
+              )}
+              <span className="muted" style={{ fontSize: ".75rem" }}>
+                {product.reviews?.length ?? 0} reviews analysed
+              </span>
+            </div>
+            <div className="prod-actions">
+              <VerdictPill v={v} />
+              {product.url && (
+                <a className="btn btn-sm" href={product.url} target="_blank" rel="noreferrer">
+                  Open on {product.source_site} <Icon id="i-arrow" />
+                </a>
+              )}
+            </div>
           </div>
-          <TrustRing score={product.trust_score} v={v} />
+          <div className="prodhead-right">
+            <TrustRing score={product.trust_score} v={v} />
+            <span className="refined-stars">
+              <Stars value={noReviews(product) ? 0 : refinedStars(product.trust_score)} />
+              <span className="eyebrow">
+                {noReviews(product)
+                  ? "no review data"
+                  : `${refinedStars(product.trust_score).toFixed(1)} refined rating`}
+              </span>
+            </span>
+          </div>
         </div>
         {desc && <p className="summary">{desc}</p>}
         {signals.map((s, i) => <Signal key={i} s={s} />)}
@@ -407,8 +470,23 @@ function CompareSection({ products, sort, onSort }) {
               return (
                 <tr key={p.id} className={isBest ? "row-best" : ""}>
                   <td>
-                    <strong>{p.name}</strong>
-                    <small><SiteTag site={p.source_site} /></small>
+                    {p.url ? (
+                      <a
+                        className="prod-link"
+                        href={p.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        title={`Open on ${p.source_site}`}
+                      >
+                        {p.name} <Icon id="i-arrow" />
+                      </a>
+                    ) : (
+                      <strong>{p.name}</strong>
+                    )}
+                    <small>
+                      <SiteTag site={p.source_site} />
+                      <span className="review-count">· {p.reviews?.length ?? 0} reviews</span>
+                    </small>
                   </td>
                   <td className="mono muted strike">
                     {p.rating != null ? p.rating.toFixed(1) : "—"}
@@ -569,12 +647,20 @@ function App() {
     [results, selectedId]
   );
 
+  const best = useMemo(
+    () =>
+      results && results.length
+        ? [...results].sort((a, b) => (b.trust_score ?? 0) - (a.trust_score ?? 0))[0]
+        : null,
+    [results]
+  );
+
   return (
     <div className="app">
       <Icons />
       <SiteHeader />
       <main>
-        <Hero onSearch={handleSearch} loading={loading || processing} />
+        <Hero onSearch={handleSearch} loading={loading || processing} best={best} />
 
         {error && <p className="error banner wrap">{error}</p>}
         {processing && <ProcessingView term={term} progress={progress} />}
