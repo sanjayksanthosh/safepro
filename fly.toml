@@ -1,0 +1,21 @@
+app = "safepro-app"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  DJANGO_DEBUG = "0"
+  DJANGO_ALLOWED_HOSTS = "safepro-app.fly.dev"
+  DJANGO_DB_NAME = "/data/db.sqlite3"
+  # Sequential scraping to stay within the free tier's small RAM budget.
+  # Bump to 3 on a bigger machine for ~2x faster scrapes.
+  SAFEPRO_MAX_WORKERS = "1"
+
+[http_service]
+  internal_port = 8000
+  force_https = true
+  processes = ["app"]
+
+[mounts]
+  source = "safepro_data"
+  destination = "/data"

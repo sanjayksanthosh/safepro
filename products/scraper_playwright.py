@@ -360,7 +360,16 @@ def scrape_site(site: str, query: str, max_items: int = DEFAULT_MAX_PER_SITE,
     with sync_playwright() as p:
         browser = p.chromium.launch(
             headless=not cfg.get("force_headed"),
-            args=["--no-sandbox", "--disable-http2"],
+            args=[
+                "--no-sandbox",
+                "--disable-http2",
+                # Memory-friendly flags: fine locally, important on free-tier
+                # hosts (Render/Fly) with small RAM limits.
+                "--disable-dev-shm-usage",
+                "--disable-gpu",
+                "--disable-extensions",
+                "--disable-background-timer-throttling",
+            ],
         )
         page = browser.new_page(
             user_agent=(

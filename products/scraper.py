@@ -107,7 +107,10 @@ def scrape_all_sites(query, on_progress=None):
     on_progress(msg, detail) is forwarded to each site's scraper so a caller
     can surface live progress to the user."""
     all_products = []
-    with ThreadPoolExecutor(max_workers=len(SITES)) as executor:
+    # Cap parallelism on low-RAM hosts (set SAFEPRO_MAX_WORKERS=1 on free tiers).
+    max_workers = int(os.environ.get("SAFEPRO_MAX_WORKERS", len(SITES)))
+    max_workers = max(1, min(max_workers, len(SITES)))
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
         futures = {
             executor.submit(_scrape_one_site, site, query, on_progress=on_progress): site
             for site in SITES
