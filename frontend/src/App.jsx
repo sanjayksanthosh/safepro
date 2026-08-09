@@ -1,16 +1,98 @@
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect, useMemo } from "react";
 import { searchProducts, getProduct } from "./api.js";
 
-const SITE_COLORS = {
-  Amazon: "#ff9900",
-  Flipkart: "#2874f0",
-  Myntra: "#ff3f6c",
+const SITES = {
+  Amazon: { color: "#ff9900", short: "AZ" },
+  Flipkart: { color: "#2874f0", short: "FK" },
+  Myntra: { color: "#ff3f6c", short: "MN" },
 };
+
+const SORT_OPTIONS = [
+  { id: "recommended", label: "Recommended (trust score)" },
+  { id: "price_asc", label: "Price: Low to High" },
+  { id: "price_desc", label: "Price: High to Low" },
+  { id: "rating", label: "Rating: High to Low" },
+  { id: "reviews", label: "Most reviews" },
+];
+
+function cleanText(s) {
+  if (!s) return "";
+  return String(s).replace(/\s+/g, " ").trim();
+}
+
+function sortProducts(list, sort) {
+  const arr = [...list];
+  switch (sort) {
+    case "price_asc":
+      return arr.sort((a, b) => (a.price ?? Infinity) - (b.price ?? Infinity));
+    case "price_desc":
+      return arr.sort((a, b) => (b.price ?? -Infinity) - (a.price ?? -Infinity));
+    case "rating":
+      return arr.sort((a, b) => (b.rating ?? -1) - (a.rating ?? -1));
+    case "reviews":
+      return arr.sort((a, b) => (b.reviews?.length ?? 0) - (a.reviews?.length ?? 0));
+    default:
+      return arr.sort(
+        (a, b) =>
+          (b.trust_score ?? 0) - (a.trust_score ?? 0) ||
+          (b.genuine_review_pct ?? 0) - (a.genuine_review_pct ?? 0)
+      );
+  }
+}
+
+function ringColor(score, noData) {
+  if (noData) return "#9ca3af";
+  if (score >= 75) return "#16a34a";
+  if (score >= 50) return "#d97706";
+  return "#dc2626";
+}
+
+function TrustRing({ score, noData, size = 76 }) {
+  const r = size / 2 - 7;
+  const c = 2 * Math.PI * r;
+  const pct = noData ? 0 : Math.max(0, Math.min(100, score));
+  const color = ringColor(score, noData);
+  return (
+    <svg
+      viewBox={`0 0 ${size} ${size}`}
+      className="trust-ring"
+      style={{ width: size, height: size }}
+    >
+      <circle cx={size / 2} cy={size / 2} r={r} className="ring-bg" strokeWidth={7} />
+      <circle
+        cx={size / 2}
+        cy={size / 2}
+        r={r}
+        className="ring-fg"
+        stroke={color}
+        strokeDasharray={`${(pct / 100) * c} ${c}`}
+        strokeWidth={7}
+        transform={`rotate(-90 ${size / 2} ${size / 2})`}
+      />
+      <text x="50%" y="55%" textAnchor="middle" dominantBaseline="middle" className="ring-text">
+        {noData ? "—" : Math.round(pct)}
+      </text>
+    </svg>
+  );
+}
+
+function SiteBadge({ site }) {
+  const info = SITES[site] || { color: "#6b7280", short: "?" };
+  return (
+    <span
+      className="site-badge"
+      style={{ backgroundColor: info.color }}
+      title={`Sold on ${site}`}
+    >
+      <span className="site-dot" style={{ backgroundColor: "#ffffff" }} />
+      {site}
+    </span>
+  );
+}
 
 function SearchBar({ onSearch, loading }) {
   const [term, setTerm] = useState("");
   const [error, setError] = useState("");
-
   const submit = (e) => {
     e.preventDefault();
     const q = term.trim();
@@ -21,148 +103,247 @@ function SearchBar({ onSearch, loading }) {
     setError("");
     onSearch(q);
   };
-
   return (
     <form className="search-bar" onSubmit={submit}>
-      <input
-        type="text"
-        value={term}
-        onChange={(e) => setTerm(e.target.value)}
-        placeholder="e.g. face serum, sunscreen, lipstick..."
-        disabled={loading}
-      />
-      <button type="submit" disabled={loading}>
-        {loading ? "Searching..." : "Search"}
+      <div className="search-field">
+        <svg className="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+          <circle cx="11" cy="11" r="8" />
+          <path d="m21 21-4.3-4.3" />
+        </svg>
+        <input
+          type="text"
+          value={term}
+          onChange={(e) => setTerm(e.target.value)}
+          placeholder="Try sunscreen, face serum, lipstick, face wash…"
+          disabled={loading}
+        />
+      </div>
+      <button type="submit" className="btn-primary" disabled={loading}>
+        {loading ? (
+          <>
+            <span className="spinner-sm" /> Searching…
+          </>
+        ) : (
+          "Search"
+        )}
       </button>
       {error && <p className="error">{error}</p>}
     </form>
   );
 }
 
-function TrustRing({ score, noData }) {
-  const r = 34;
-  const c = 2 * Math.PI * r;
-  const pct = noData ? 0 : Math.max(0, Math.min(100, score));
-  const color = noData ? "#9ca3af" : pct >= 75 ? "#16a34a" : pct >= 50 ? "#d97706" : "#dc2626";
+function ProcessingView({ term, progress }) {
   return (
-    <svg viewBox="0 0 80 80" className="trust-ring">
-      <circle cx="40" cy="40" r={r} className="ring-bg" />
-      <circle
-        cx="40"
-        cy="40"
-        r={r}
-        className="ring-fg"
-        stroke={color}
-        strokeDasharray={`${(pct / 100) * c} ${c}`}
-        transform="rotate(-90 40 40)"
-      />
-      <text x="40" y="44" textAnchor="middle" className="ring-text">
-        {noData ? "—" : Math.round(pct)}
-      </text>
-    </svg>
+    <div className="processing card">
+      <div className="spinner" />
+      <h3>Searching <span className="accent">{term}</span></h3>
+      <p className="muted">
+        We&apos;re live-scraping Amazon, Flipkart and Myntra and running our
+        fake-review detection. This usually takes a few minutes.
+      </p>
+      {progress && <p className="progress-msg">{progress}</p>}
+      <div className="progress-track">
+        <div className="progress-bar" />
+      </div>
+    </div>
   );
 }
 
-function ProductCard({ product, onSelect, highlight }) {
+function ProductCard({ product, onSelect, isBest, rank }) {
   const noReviews = !product.reviews || product.reviews.length === 0;
+  const info = SITES[product.source_site] || { color: "#6b7280", short: "?" };
+  const desc = cleanText(product.description);
   return (
     <button
-      className={`product-card ${highlight ? "highlight" : ""}`}
+      className={`product-card ${isBest ? "best" : ""}`}
       onClick={() => onSelect(product.id)}
     >
-      {highlight && <span className="badge">Best Product</span>}
-      <TrustRing score={product.trust_score} noData={noReviews} />
-      <div className="product-info">
-        <h3>{product.name}</h3>
-        <p className="meta">
-          <span
-            className="site-tag"
-            style={{ backgroundColor: SITE_COLORS[product.source_site] }}
-          >
-            {product.source_site}
+      {isBest && (
+        <span className="best-ribbon">
+          <svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor">
+            <path d="M12 2l2.4 4.9 5.4.8-3.9 3.8.9 5.4L12 14.6l-4.8 2.5.9-5.4-3.9-3.8 5.4-.8z" />
+          </svg>
+          Best pick
+        </span>
+      )}
+      <div className="card-media" style={{ background: `linear-gradient(135deg, ${info.color}33, ${info.color}18)` }}>
+        {product.image_url ? (
+          <img src={product.image_url} alt={product.name} loading="lazy" />
+        ) : (
+          <span className="media-mono">{info.short}</span>
+        )}
+        {rank !== null && <span className="rank">{rank}</span>}
+      </div>
+      <div className="card-body">
+        <div className="card-top">
+          <SiteBadge site={product.source_site} />
+          <span className="trust-chip" style={{ color: ringColor(product.trust_score, noReviews) }}>
+            Trust {noReviews ? "—" : Math.round(product.trust_score)}%
           </span>
-          {product.price != null && (
-            <span className="price">Rs. {Number(product.price).toLocaleString()}</span>
-          )}
+        </div>
+        <h3 className="card-title">{product.name}</h3>
+        {desc && <p className="card-desc">{desc.slice(0, 110)}{desc.length > 110 ? "…" : ""}</p>}
+        <div className="card-meta">
+          {product.price != null && <span className="price">₹{Number(product.price).toLocaleString("en-IN")}</span>}
           {product.rating != null && (
-            <span className="rating">&#9733; {product.rating}</span>
+            <span className="rating-chip">★ {product.rating}</span>
           )}
-        </p>
-        <p className="sub-meta">
-          {noReviews ? (
-            "No review data scraped"
-          ) : (
-            <>
-              Trust {Math.round(product.trust_score)}% &middot; Sentiment{" "}
-              {Math.round(product.avg_sentiment * 100)}% &middot;{" "}
-              {product.genuine_review_pct}% genuine reviews
-            </>
+          {!noReviews && (
+            <span className="muted">{product.reviews.length} reviews</span>
           )}
-        </p>
+        </div>
+      </div>
+      <div className="card-score">
+        <TrustRing score={product.trust_score} noData={noReviews} />
+        <span className="score-label">trust score</span>
       </div>
     </button>
   );
 }
 
-function ReviewRow({ review }) {
-  const fake = review.fake_probability >= 0.5;
+function ResultsToolbar({ count, term, sort, onSort }) {
   return (
-    <li className={`review ${fake ? "fake" : ""}`}>
-      <p className="review-text">{review.text}</p>
-      <p className="review-meta">
-        {review.author && <span>{review.author} &middot; </span>}
-        {review.star_rating != null && <span>&#9733; {review.star_rating} &middot; </span>}
-        <span>
-          Sentiment {Math.round(review.sentiment_score * 100)}% &middot;{" "}
-          {fake ? "Likely fake" : "Likely genuine"}
-        </span>
+    <div className="toolbar">
+      <p className="results-title">
+        <strong>{count}</strong> {count === 1 ? "product" : "products"} compared
+        {term ? ` for “${term}”` : ""}
       </p>
-    </li>
+      <label className="sort-control">
+        <span>Sort by</span>
+        <select value={sort} onChange={(e) => onSort(e.target.value)}>
+          {SORT_OPTIONS.map((o) => (
+            <option key={o.id} value={o.id}>
+              {o.label}
+            </option>
+          ))}
+        </select>
+      </label>
+    </div>
+  );
+}
+
+function StatPill({ label, value, color }) {
+  return (
+    <div className="stat-pill">
+      <span className="stat-value" style={{ color }}>
+        {value}
+      </span>
+      <span className="stat-label">{label}</span>
+    </div>
   );
 }
 
 function ProductDetail({ product, onBack }) {
   const noReviews = !product.reviews || product.reviews.length === 0;
+  const info = SITES[product.source_site] || { color: "#6b7280", short: "?" };
+  const desc = cleanText(product.description);
+  const genuineCount = product.reviews?.filter((r) => r.fake_probability < 0.5).length ?? 0;
+
   return (
-    <div className="detail">
+    <div className="detail card">
       <button className="back" onClick={onBack}>
-        &larr; Back to results
+        ← Back to results
       </button>
+
       <div className="detail-head">
-        <TrustRing score={product.trust_score} noData={noReviews} />
-        <div>
+        <div
+          className="detail-media"
+          style={{ background: `linear-gradient(135deg, ${info.color}33, ${info.color}18)` }}
+        >
+          {product.image_url ? (
+            <img src={product.image_url} alt={product.name} />
+          ) : (
+            <span className="media-mono">{info.short}</span>
+          )}
+        </div>
+        <div className="detail-main">
+          <SiteBadge site={product.source_site} />
           <h2>{product.name}</h2>
-          <p className="meta">
-            <span
-              className="site-tag"
-              style={{ backgroundColor: SITE_COLORS[product.source_site] }}
-            >
-              {product.source_site}
-            </span>
+          <div className="detail-meta">
             {product.price != null && (
-              <span className="price">Rs. {Number(product.price).toLocaleString()}</span>
+              <span className="price big">₹{Number(product.price).toLocaleString("en-IN")}</span>
             )}
-            {product.rating != null && <span className="rating">&#9733; {product.rating}</span>}
-          </p>
-          <a href={product.url} target="_blank" rel="noreferrer">
-            View on {product.source_site}
+            {product.rating != null && <span className="rating-chip big">★ {product.rating}</span>}
+          </div>
+          <a href={product.url} target="_blank" rel="noreferrer" className="btn-outline">
+            View on {product.source_site} ↗
           </a>
         </div>
+        <div className="detail-score">
+          <TrustRing score={product.trust_score} noData={noReviews} size={96} />
+          <span className="score-label">overall trust</span>
+        </div>
       </div>
-      {product.description && <p className="description">{product.description}</p>}
-      <h3>Reviews ({product.reviews.length})</h3>
-      {noReviews ? (
-        <p className="empty">
-          No review data was scraped for this product (the site may have blocked
-          the review section).
-        </p>
-      ) : (
-        <ul className="review-list">
-          {product.reviews.map((r, i) => (
-            <ReviewRow key={i} review={r} />
-          ))}
-        </ul>
+
+      <div className="stats-row">
+        <StatPill
+          label="Trust score"
+          value={noReviews ? "—" : `${Math.round(product.trust_score)}%`}
+          color={ringColor(product.trust_score, noReviews)}
+        />
+        <StatPill
+          label="Avg sentiment"
+          value={noReviews ? "—" : `${Math.round((product.avg_sentiment ?? 0) * 100)}%`}
+          color="#2563eb"
+        />
+        <StatPill
+          label="Genuine reviews"
+          value={noReviews ? "—" : `${product.genuine_review_pct ?? 0}%`}
+          color="#16a34a"
+        />
+        <StatPill
+          label="Reviews checked"
+          value={product.reviews?.length ?? 0}
+          color="#6b7280"
+        />
+      </div>
+
+      {desc && (
+        <section className="detail-section">
+          <h3>About this product</h3>
+          <p className="description">{desc}</p>
+        </section>
       )}
+
+      <section className="detail-section">
+        <h3>
+          Review analysis
+          {!noReviews && (
+            <span className="review-summary">
+              {genuineCount} genuine · {product.reviews.length - genuineCount} flagged as fake
+            </span>
+          )}
+        </h3>
+        {noReviews ? (
+          <p className="empty">
+            No review data was scraped for this product (the site may have blocked
+            the review section).
+          </p>
+        ) : (
+          <ul className="review-list">
+            {product.reviews.map((r, i) => {
+              const fake = r.fake_probability >= 0.5;
+              return (
+                <li key={i} className={`review ${fake ? "fake" : ""}`}>
+                  <p className="review-text">{r.text}</p>
+                  <p className="review-meta">
+                    {r.author && <span className="review-author">{r.author}</span>}
+                    {r.star_rating != null && <span>★ {r.star_rating}</span>}
+                    <span
+                      className={`verdict ${fake ? "fake" : "genuine"}`}
+                    >
+                      {fake
+                        ? `⚠ ${Math.round(r.fake_probability * 100)}% likely fake`
+                        : `✓ ${Math.round((1 - r.fake_probability) * 100)}% genuine`}
+                    </span>
+                    <span>Sentiment {Math.round(r.sentiment_score * 100)}%</span>
+                  </p>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </section>
     </div>
   );
 }
@@ -175,6 +356,7 @@ function App() {
   const [processing, setProcessing] = useState(false);
   const [progress, setProgress] = useState("");
   const [error, setError] = useState("");
+  const [sort, setSort] = useState("recommended");
   const pollRef = useRef(null);
 
   const stopPolling = () => {
@@ -187,11 +369,12 @@ function App() {
   useEffect(() => stopPolling, []);
 
   const handleSearch = async (q) => {
-      setError("");
+    setError("");
     setSelected(null);
     setProcessing(false);
     setProgress("");
     stopPolling();
+    setSort("recommended");
     try {
       setLoading(true);
       const data = await searchProducts(q);
@@ -242,55 +425,98 @@ function App() {
   const cleanResults = (list) =>
     (list || []).filter((p) => p.name && String(p.name).trim());
 
-  const best = results && results.length ? results[0] : null;
+  const sorted = useMemo(() => sortProducts(results || [], sort), [results, sort]);
+  const best = useMemo(
+    () =>
+      results && results.length
+        ? [...results].sort(
+            (a, b) =>
+              (b.trust_score ?? 0) - (a.trust_score ?? 0) ||
+              (b.genuine_review_pct ?? 0) - (a.genuine_review_pct ?? 0)
+          )[0]
+        : null,
+    [results]
+  );
 
   return (
     <div className="app">
-      <header>
-        <h1>Safe-Pro</h1>
-        <p className="tagline">
-          Trusted beauty product comparison with fake-review detection
-        </p>
-      </header>
-      <SearchBar onSearch={handleSearch} loading={loading || processing} />
-
-      {error && <p className="error banner">{error}</p>}
-
-      {processing && (
-        <div className="processing">
-          <div className="spinner" />
-          <p>
-            Searching <strong>{term}</strong> across Amazon, Flipkart and Myntra...
-          </p>
-          {progress && <p className="progress-msg">{progress}</p>}
-          <p className="progress-hint">
-            Live scraping takes a few minutes; results appear automatically when done.
-          </p>
-        </div>
-      )}
-
-      {!processing && results && !selected && (
-        <section>
-          <h2>
-            {results.length} products compared{term ? ` for "${term}"` : ""}
-          </h2>
-          {results.length === 0 && (
-            <p className="empty">No products found. Try a different search term.</p>
-          )}
-          <div className="product-list">
-            {results.map((p, i) => (
-              <ProductCard
-                key={p.id}
-                product={p}
-                onSelect={openProduct}
-                highlight={best && best.id === p.id}
-              />
-            ))}
+      <header className="site-header">
+        <div className="header-inner">
+          <div className="logo">
+            <span className="logo-mark">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M12 2 4 7v5c0 5.2 3.4 9.6 8 10.9 4.6-1.3 8-5.7 8-10.9V7z" />
+              </svg>
+            </span>
+            <div>
+              <h1>Safe-Pro</h1>
+              <p className="tagline">Compare beauty products · detect fake reviews</p>
+            </div>
           </div>
-        </section>
-      )}
+          <div className="trust-strip">
+            <span>✓ 3 stores</span>
+            <span>✓ AI review analysis</span>
+            <span>✓ Unbiased scores</span>
+          </div>
+        </div>
+      </header>
 
-      {selected && <ProductDetail product={selected} onBack={() => setSelected(null)} />}
+      <main>
+        <div className="hero">
+          <h2>Shop smart, not gullible</h2>
+          <p className="hero-sub">
+            Search a product and we compare it across Amazon, Flipkart and Myntra —
+            then score every review for authenticity so you can trust what you buy.
+          </p>
+          <SearchBar onSearch={handleSearch} loading={loading || processing} />
+        </div>
+
+        {error && <p className="error banner">{error}</p>}
+
+        {processing && <ProcessingView term={term} progress={progress} />}
+
+        {!processing && results && !selected && (
+          <section className="results">
+            <ResultsToolbar
+              count={results.length}
+              term={term}
+              sort={sort}
+              onSort={setSort}
+            />
+            {results.length === 0 ? (
+              <p className="empty card">
+                No products found for “{term}”. Try a different search term.
+              </p>
+            ) : (
+              <div className="product-list">
+                {sorted.map((p, i) => (
+                  <ProductCard
+                    key={p.id}
+                    product={p}
+                    onSelect={openProduct}
+                    isBest={best && best.id === p.id}
+                    rank={i + 1}
+                  />
+                ))}
+              </div>
+            )}
+          </section>
+        )}
+
+        {selected && (
+          <ProductDetail
+            product={selected}
+            onBack={() => setSelected(null)}
+          />
+        )}
+      </main>
+
+      <footer className="site-footer">
+        <p>
+          Safe-Pro is an independent comparison tool. Prices and availability are
+          scraped from public store pages and may change.
+        </p>
+      </footer>
     </div>
   );
 }
