@@ -1,0 +1,17 @@
+# Render blueprint — deploy Safe-Pro on the free tier.
+# Connect this repo to Render (New + > Blueprint) and it will build
+# the Dockerfile and provision the env vars below.
+services:
+  - type: web
+    name: safepro
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /api/search?q=sunscreen
+    envVars:
+      - key: DJANGO_DEBUG
+        value: "0"
+      - key: DJANGO_SECRET_KEY
+        generateValue: true
+      - key: DJANGO_ALLOWED_HOSTS
+        value: "*"

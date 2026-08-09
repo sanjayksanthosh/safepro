@@ -1,0 +1,13 @@
+django>=4.2
+djangorestframework
+django-cors-headers
+nltk
+requests
+beautifulsoup4
+playwright
+playwright-stealth
+scikit-learn
+pandas
+joblib
+gunicorn
+whitenoise
