@@ -33,6 +33,9 @@ RUN python -m playwright install --with-deps chromium \
 COPY . .
 COPY --from=frontend-build /frontend/dist /app/frontend/dist
 
+# File-logging handler writes to /app/logs/safepro.log; create the dir.
+RUN mkdir -p /app/logs
+
 # Collect the built SPA assets into STATIC_ROOT for WhiteNoise.
 RUN python manage.py collectstatic --noinput
 
