@@ -212,7 +212,7 @@ function SiteHeader() {
 
 /* ---------- Hero ---------- */
 
-function Hero({ onSearch, loading, best }) {
+function Hero({ onSearch, loading }) {
   const [term, setTerm] = useState("");
   const [error, setError] = useState("");
   const submit = (e) => {
@@ -227,61 +227,32 @@ function Hero({ onSearch, loading, best }) {
   };
   return (
     <section className="wrap hero" id="search">
-      <div className="hero-grid">
-        <div className="hero-copy">
-          <span className="eyebrow">Product authentication · beauty</span>
-          <h1>Know what&rsquo;s real <em>before</em> you buy it.</h1>
-          <p className="lede">
-            Safe-pro scrapes listings, prices and reviews across Amazon, Flipkart and
-            Myntra, filters out fake reviews, and shows you a refined score you can
-            actually trust.
-          </p>
-          <form className="searchbar" onSubmit={submit}>
-            <Icon id="i-search" />
-            <input
-              value={term}
-              onChange={(e) => setTerm(e.target.value)}
-              placeholder="Search a beauty product — sunscreen, serum, lipstick…"
-              aria-label="Search a beauty product"
-              disabled={loading}
-            />
-            <button className="btn" disabled={loading}>
-              {loading ? "Scanning…" : "Verify"}
-            </button>
-          </form>
-          {error && <p className="error">{error}</p>}
-          <dl className="stats">
-            <div><dt>3</dt><dd>Marketplaces scraped</dd></div>
-            <div><dt>AI</dt><dd>Fake-review detection</dd></div>
-            <div><dt>24h</dt><dd>Results cached</dd></div>
-          </dl>
-        </div>
-
-        <div className="hero-art">
-          <div className="hero-frame">
-            <img src="/hero.jpg" alt="Beauty product editorial" loading="eager" />
-            <div className="card float-a">
-              <span className="pill ok"><Icon id="i-shield" />Likely authentic</span>
-              <p className="float-score">
-                {best ? `${Math.round(best.trust_score)} / 100` : "— / 100"}
-              </p>
-              <p className="muted float-note">
-                {best
-                  ? `${flaggedPct(best)}% of ${best.reviews?.length ?? 0} reviews flagged as fake`
-                  : "Search a product to see its verdict"}
-              </p>
-            </div>
-            <div className="card float-b">
-              <Icon id="i-trend" />
-              <span>
-                {best && best.price != null
-                  ? `Best price ${fmt(best.price)} · ${best.source_site}`
-                  : "3 marketplaces · AI analysis"}
-              </span>
-            </div>
-          </div>
-        </div>
-      </div>
+      <span className="eyebrow">Product authentication · beauty</span>
+      <h1>Know what&rsquo;s real <em>before</em> you buy it.</h1>
+      <p className="lede">
+        Safe-pro scrapes listings, prices and reviews across Amazon, Flipkart and
+        Myntra, filters out fake reviews, and shows you a refined score you can
+        actually trust.
+      </p>
+      <form className="searchbar" onSubmit={submit}>
+        <Icon id="i-search" />
+        <input
+          value={term}
+          onChange={(e) => setTerm(e.target.value)}
+          placeholder="Search a beauty product — sunscreen, serum, lipstick…"
+          aria-label="Search a beauty product"
+          disabled={loading}
+        />
+        <button className="btn" disabled={loading}>
+          {loading ? "Scanning…" : "Verify"}
+        </button>
+      </form>
+      {error && <p className="error">{error}</p>}
+      <dl className="stats">
+        <div><dt>3</dt><dd>Marketplaces scraped</dd></div>
+        <div><dt>AI</dt><dd>Fake-review detection</dd></div>
+        <div><dt>24h</dt><dd>Results cached</dd></div>
+      </dl>
     </section>
   );
 }
@@ -647,20 +618,12 @@ function App() {
     [results, selectedId]
   );
 
-  const best = useMemo(
-    () =>
-      results && results.length
-        ? [...results].sort((a, b) => (b.trust_score ?? 0) - (a.trust_score ?? 0))[0]
-        : null,
-    [results]
-  );
-
   return (
     <div className="app">
       <Icons />
       <SiteHeader />
       <main>
-        <Hero onSearch={handleSearch} loading={loading || processing} best={best} />
+        <Hero onSearch={handleSearch} loading={loading || processing} />
 
         {error && <p className="error banner wrap">{error}</p>}
         {processing && <ProcessingView term={term} progress={progress} />}
