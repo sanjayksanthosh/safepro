@@ -6,6 +6,13 @@ Safe-Pro compares beauty products across **Amazon, Flipkart, and Myntra**, detec
 - **ML**: a Random Forest (TF-IDF + review statistics) trained on the CMU Deceptive Opinion Spam corpus, blended with rule-based heuristics in `products/nlp.py`. Model artifact: `products/ml/fake_review_model.joblib`.
 - **Frontend**: React + Vite (`frontend/`).
 
+
+## Demo video
+
+<video src="https://raw.githubusercontent.com/sanjayksanthosh/safepro/master/docs/video/safepro-brag.mp4" poster="https://raw.githubusercontent.com/sanjayksanthosh/safepro/master/docs/video/safepro-brag.jpg" controls width="100%"></video>
+
+[Download the MP4](docs/video/safepro-brag.mp4) · [Poster](docs/video/safepro-brag.jpg)
+
 ## Screenshots
 
 | Home | Search results |
