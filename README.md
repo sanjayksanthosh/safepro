@@ -1,4 +1,4 @@
-# Safe-Pro — setup & run guide
+﻿# Safe-Pro â€” setup & run guide
 
 Safe-Pro compares beauty products across **Amazon, Flipkart, and Myntra**, detects fake reviews with a trained ML model, and shows a trust score per product.
 
@@ -30,7 +30,7 @@ playwright install chromium
 python manage.py migrate
 ```
 
-Creates `db.sqlite3` — no separate database install needed.
+Creates `db.sqlite3` â€” no separate database install needed.
 
 ## 3. Run the backend
 
@@ -64,28 +64,28 @@ Open `http://localhost:5173`. The Vite dev server proxies `/api` to `http://127.
 
 ```
 safepro/
-├── manage.py
-├── requirements.txt
-├── safepro_backend/       Django settings (env-configured) & URL routing
-├── products/
-│   ├── models.py          SearchQuery (with job status), Product, Review
-│   ├── views.py           /api/search (async + polling), /api/products/<id>/
-│   ├── scraper.py         demo/real switch, orchestrates the three sites
-│   ├── scraper_playwright.py   live Playwright scrapers (Amazon/Flipkart/Myntra)
-│   ├── nlp.py             VADER sentiment + fake-review blend + trust score
-│   ├── ml/
-│   │   ├── features.py    feature extraction shared by training & inference
-│   │   ├── model.py       pipeline builder, model loader, predictor
-│   │   └── fake_review_model.joblib
-│   └── urls.py
-├── train_model.py         dataset download + train + evaluate + save
-├── data/op_spam_v1.4      CMU Deceptive Opinion Spam corpus
-└── frontend/              React + Vite app (src/App.jsx)
+â”œâ”€â”€ manage.py
+â”œâ”€â”€ requirements.txt
+â”œâ”€â”€ safepro_backend/       Django settings (env-configured) & URL routing
+â”œâ”€â”€ products/
+â”‚   â”œâ”€â”€ models.py          SearchQuery (with job status), Product, Review
+â”‚   â”œâ”€â”€ views.py           /api/search (async + polling), /api/products/<id>/
+â”‚   â”œâ”€â”€ scraper.py         demo/real switch, orchestrates the three sites
+â”‚   â”œâ”€â”€ scraper_playwright.py   live Playwright scrapers (Amazon/Flipkart/Myntra)
+â”‚   â”œâ”€â”€ nlp.py             VADER sentiment + fake-review blend + trust score
+â”‚   â”œâ”€â”€ ml/
+â”‚   â”‚   â”œâ”€â”€ features.py    feature extraction shared by training & inference
+â”‚   â”‚   â”œâ”€â”€ model.py       pipeline builder, model loader, predictor
+â”‚   â”‚   â””â”€â”€ fake_review_model.joblib
+â”‚   â””â”€â”€ urls.py
+â”œâ”€â”€ train_model.py         dataset download + train + evaluate + save
+â”œâ”€â”€ data/op_spam_v1.4      CMU Deceptive Opinion Spam corpus
+â””â”€â”€ frontend/              React + Vite app (src/App.jsx)
 ```
 
 ## How the async scraping works
 
-1. `GET /api/search?q=...` — if a fresh cached result exists, return it (`cached: true`).
+1. `GET /api/search?q=...` â€” if a fresh cached result exists, return it (`cached: true`).
 2. Otherwise mark the `SearchQuery` row `pending` and start a daemon thread that scrapes all three sites, analyzes reviews, and saves products.
 3. The API returns `{ "processing": true }`; the frontend polls until it sees `results`.
 4. Failures set `status: error` with the message; retried on next search.
@@ -107,7 +107,7 @@ are deterministic.
 
 ## Notes / caveats
 
-- Scraping selectors change and sites throttle/captcha — individual runs can come back partial or empty; results are cached 24h per term.
+- Scraping selectors change and sites throttle/captcha â€” individual runs can come back partial or empty; results are cached 24h per term.
 - Myntra requires a headed browser (`--disable-http2`) because headless fails with HTTP/2 errors.
 - Flipkart reviews are read from the dedicated `/product-reviews/{pid}` page, not the product page.
 - `logs/safepro.log` captures structured logging.
@@ -116,23 +116,23 @@ are deterministic.
 
 The repo is Docker-ready (`Dockerfile`, `start.sh`, `render.yaml`). The image
 builds the React app, installs Python + Playwright Chromium + system libs, runs
-migrations, and starts Gunicorn (1 worker, 8 threads — required because the
+migrations, and starts Gunicorn (1 worker, 8 threads â€” required because the
 in-flight job lock and progress live in process memory).
 
 Important: live scraping needs a real browser (Playwright Chromium), so
 "run Python only" free hosts (PythonAnywhere, most serverless) won't work.
 
-### Option A — Render (free tier, easiest)
+### Option A â€” Render (free tier, easiest)
 
 1. Push this repo to GitHub.
-2. On [render.com](https://render.com) → **New +** → **Blueprint** → connect the repo.
-   It picks up `render.yaml` automatically. Or **New + Web Service** → choose Docker,
+2. On [render.com](https://render.com) â†’ **New +** â†’ **Blueprint** â†’ connect the repo.
+   It picks up `render.yaml` automatically. Or **New + Web Service** â†’ choose Docker,
    and set the env vars from the table below.
 3. Deploy. First request after idle takes ~1 min to cold-start (free tier
    sleeps after 15 min of inactivity). Cached results (SQLite) reset on
    redeploy since the free disk is ephemeral.
 
-### Option B — Oracle Cloud Always Free (most robust, real server)
+### Option B â€” Oracle Cloud Always Free (most robust, real server)
 
 Create a free ARM VM (4 cores / 24 GB), then on the VM:
 
@@ -163,6 +163,7 @@ DJANGO_DEBUG=0 DJANGO_ALLOWED_HOSTS=<your-ip-or-domain> DJANGO_SECRET_KEY=<secre
 Optional: `DJANGO_DB_*` to switch from SQLite to PostgreSQL/MySQL.
 
 Notes on free hosting:
-- Render free tier sleeps when idle and has ~512 MB RAM — fine for this app
+- Render free tier sleeps when idle and has ~512 MB RAM â€” fine for this app
   (Chromium launches only during a scrape). SQLite cache resets on redeploy.
 - A full scrape takes ~2 min on a normal server; results are cached 24h.
+
