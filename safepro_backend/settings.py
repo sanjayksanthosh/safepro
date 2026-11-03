@@ -16,9 +16,22 @@ Configured via environment variables with dev-friendly defaults:
 
 import os
 from pathlib import Path
+from django.core.exceptions import ImproperlyConfigured
+
+try:  # optional: lets a local .env file populate os.environ
+    from dotenv import load_dotenv
+except ImportError:  # pragma: no cover - python-dotenv is optional
+    load_dotenv = None
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
+
+if load_dotenv is not None:
+    load_dotenv(BASE_DIR / ".env")
+
+# Rotating file logs need the directory to exist on a fresh clone.
+LOG_DIR = BASE_DIR / "logs"
+LOG_DIR.mkdir(exist_ok=True)
 
 
 def _env_bool(name, default=False):
@@ -26,12 +39,15 @@ def _env_bool(name, default=False):
 
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = os.environ.get(
-    "DJANGO_SECRET_KEY",
-    "django-insecure-l)2u_uoz2#c6ild6=$-9ca$$kl8j=v%^1z6yw+ar@_w4mpvy_1",
-)
+_DEV_SECRET_KEY = "django-insecure-l)2u_uoz2#c6ild6=$-9ca$$kl8j=v%^1z6yw+ar@_w4mpvy_1"
+SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY", _DEV_SECRET_KEY)
 
 DEBUG = _env_bool("DJANGO_DEBUG", True)
+
+if not DEBUG and SECRET_KEY == _DEV_SECRET_KEY:
+    raise ImproperlyConfigured(
+        "DJANGO_SECRET_KEY must be set to a real value when DJANGO_DEBUG=0."
+    )
 
 ALLOWED_HOSTS = [
     h.strip() for h in os.environ.get("DJANGO_ALLOWED_HOSTS", "127.0.0.1,localhost").split(",")
@@ -136,7 +152,7 @@ LOGGING = {
         },
         'file': {
             'class': 'logging.handlers.RotatingFileHandler',
-            'filename': BASE_DIR / 'logs' / 'safepro.log',
+            'filename': LOG_DIR / 'safepro.log',
             'maxBytes': 5 * 1024 * 1024,
             'backupCount': 3,
             'formatter': 'verbose',

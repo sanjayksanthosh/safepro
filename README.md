@@ -6,6 +6,12 @@ Safe-Pro compares beauty products across **Amazon, Flipkart, and Myntra**, detec
 - **ML**: a Random Forest (TF-IDF + review statistics) trained on the CMU Deceptive Opinion Spam corpus, blended with rule-based heuristics in `products/nlp.py`. Model artifact: `products/ml/fake_review_model.joblib`.
 - **Frontend**: React + Vite (`frontend/`).
 
+## Screenshots
+
+| Home | Search results |
+| --- | --- |
+| ![Home](docs/screenshots/home.png) | ![Search results](docs/screenshots/search-results.png) |
+
 ## 1. Install requirements
 
 Python 3.10+ and Node 18+.
@@ -87,6 +93,17 @@ safepro/
 ## ML training
 
 `train_model.py` downloads the CMU corpus (1,600 hotel reviews), extracts `review_features()` (TF-IDF + length/punctuation/shouting statistics), trains a 300-tree Random Forest with a scaled TF-IDF/statistic pipeline, and reports CV + holdout accuracy. Latest run: ~89% holdout accuracy. It is blended with the rule-based heuristic in `nlp.py` (`MODEL_WEIGHT=0.4`) because model probabilities compress on real cosmetic reviews (domain shift from hotels).
+
+## Tests
+
+```bash
+python manage.py test products
+```
+
+17 tests cover the NLP pipeline in `products/nlp.py` (`clean_text`, sentiment,
+`_has_repetition`, `fake_probability`, `analyze_reviews`, `compute_trust_score`),
+run without a database (`SimpleTestCase`) and with the ML model mocked out so they
+are deterministic.
 
 ## Notes / caveats
 
